@@ -5,9 +5,11 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { SSEServerTransport } from "@modelcontextprotocol/sdk/server/sse.js";
 import express from "express";
+import { z } from "zod";
 
 const PORT = process.env.PORT || 8080;
 const app = express();
+app.use(express.json());
 
 // Store transports for each session
 const transports = new Map<string, SSEServerTransport>();
@@ -26,10 +28,9 @@ server.tool(
   "help_me_start",
   "Help the user start a task they're stuck on. Call this when someone expresses difficulty starting, procrastination, or ADHD-related task paralysis.",
   {
-    task: {
-      type: "string",
-      description: "What the user wants to do or is struggling to start",
-    },
+    task: z
+      .string()
+      .describe("What the user wants to do or is struggling to start"),
   },
   async ({ task }) => {
     return {
@@ -59,12 +60,7 @@ What feels doable right now?`,
 server.tool(
   "break_down_task",
   "Break an overwhelming task into small, ADHD-friendly micro-tasks of 2-5 minutes each.",
-  {
-    task: {
-      type: "string",
-      description: "The task to break down",
-    },
-  },
+  { task: z.string().describe("The task to break down") },
   async ({ task }) => {
     const taskLower = (task || "").toLowerCase();
     let microTasks: string[];
@@ -117,12 +113,7 @@ ${microTasks.map((t, i) => `${i + 1}. ${t}`).join("\n")}
 server.tool(
   "complete_task",
   "Mark a task as completed and celebrate the win!",
-  {
-    task: {
-      type: "string",
-      description: "What was completed",
-    },
-  },
+  { task: z.string().describe("What was completed") },
   async ({ task }) => {
     const celebrations = [
       "🎉 **YES! You did it!**",
@@ -173,7 +164,6 @@ app.get("/sse", async (req, res) => {
 app.post("/message", async (req, res) => {
   console.log("[Message] Received");
 
-  // Find the transport and handle message
   const transport = Array.from(transports.values())[0];
   if (transport) {
     await transport.handlePostMessage(req, res);
