@@ -1,5 +1,5 @@
 /**
- * ADHDone - Simple MCP Server (No SDK)
+ * ADHDone - MCP Server with SSE support
  */
 
 import express from "express";
@@ -134,7 +134,57 @@ function handleMcpRequest(body: any): any {
   }
 }
 
-// MCP endpoint
+// Store for SSE connections
+const sseConnections = new Map<string, express.Response>();
+
+// SSE endpoint
+app.get("/sse", (req, res) => {
+  const sessionId = `s-${Date.now()}`;
+  console.log(`[SSE] New connection: ${sessionId}`);
+
+  res.setHeader("Content-Type", "text/event-stream");
+  res.setHeader("Cache-Control", "no-cache");
+  res.setHeader("Connection", "keep-alive");
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  res.flushHeaders();
+
+  // Send endpoint event
+  const messageUrl = `https://${req.get(
+    "host"
+  )}/sse/message?sessionId=${sessionId}`;
+  res.write(`event: endpoint\ndata: ${messageUrl}\n\n`);
+
+  sseConnections.set(sessionId, res);
+
+  // Keep alive
+  const keepAlive = setInterval(() => {
+    res.write(": ping\n\n");
+  }, 15000);
+
+  req.on("close", () => {
+    console.log(`[SSE] Closed: ${sessionId}`);
+    clearInterval(keepAlive);
+    sseConnections.delete(sessionId);
+  });
+});
+
+// SSE message endpoint
+app.post("/sse/message", (req, res) => {
+  const sessionId = req.query.sessionId as string;
+  const sseRes = sseConnections.get(sessionId);
+
+  const response = handleMcpRequest(req.body);
+
+  // Send via SSE if connected
+  if (sseRes) {
+    sseRes.write(`event: message\ndata: ${JSON.stringify(response)}\n\n`);
+  }
+
+  // Also send HTTP response
+  res.json(response);
+});
+
+// Regular MCP endpoint (Streamable HTTP)
 app.post("/mcp", (req, res) => {
   const response = handleMcpRequest(req.body);
   res.json(response);
