@@ -1,62 +1,95 @@
 /**
- * ADHDone - Hello World MCP Server
+ * ADHDone - MCP Server with SSE Transport
  *
- * Simplified version for testing deployment
+ * ChatGPT connects via Server-Sent Events (SSE)
  */
 
-import express from "express";
-
-// ============================================
-// Configuration
-// ============================================
+import express, { Request, Response } from "express";
 
 const PORT = process.env.PORT || 8080;
-
-// ============================================
-// Express Server for Health Checks & Basic API
-// ============================================
-
 const app = express();
 app.use(express.json());
 
-// Health check endpoint
-app.get("/health", (req, res) => {
-  res.json({
-    status: "ok",
-    service: "adhdone",
-    version: "0.1.0",
-    timestamp: new Date().toISOString(),
-  });
-});
-
-// Server info
-app.get("/", (req, res) => {
-  res.json({
-    name: "ADHDone MCP Server",
-    version: "0.1.0",
-    description: "AI-powered ADHD task coach for ChatGPT",
-    status: "running",
-    tools: ["help_me_start", "break_down_task", "start_timer", "complete_task"],
-  });
-});
-
 // ============================================
-// Tool Endpoints (Simple REST for now)
+// Tool Definitions
 // ============================================
 
-// Help me start
-app.post("/tools/help_me_start", (req, res) => {
-  const { task, feeling } = req.body;
-  const userId = req.headers["x-openai-subject"] || "unknown";
+const TOOLS = [
+  {
+    name: "help_me_start",
+    description:
+      "Help the user start a task they're stuck on. Call this when someone expresses difficulty starting, procrastination, or ADHD-related task paralysis.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        task: {
+          type: "string",
+          description: "What the user wants to do or is struggling to start",
+        },
+      },
+      required: ["task"],
+    },
+  },
+  {
+    name: "break_down_task",
+    description:
+      "Break an overwhelming task into small, ADHD-friendly micro-tasks of 2-5 minutes each.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        task: {
+          type: "string",
+          description: "The task to break down",
+        },
+      },
+      required: ["task"],
+    },
+  },
+  {
+    name: "start_timer",
+    description: "Start a short focus timer for a specific micro-task.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        task: {
+          type: "string",
+          description: "The micro-task to focus on",
+        },
+        minutes: {
+          type: "number",
+          description: "How many minutes (default: 5)",
+        },
+      },
+      required: ["task"],
+    },
+  },
+  {
+    name: "complete_task",
+    description: "Mark a task as completed and celebrate the win!",
+    inputSchema: {
+      type: "object",
+      properties: {
+        task: {
+          type: "string",
+          description: "What was completed",
+        },
+      },
+      required: ["task"],
+    },
+  },
+];
 
-  console.log(
-    `[help_me_start] User: ${String(userId).substring(0, 20)}... Task: ${task}`
-  );
+// ============================================
+// Tool Handlers
+// ============================================
 
-  res.json({
-    message: `🧠 **ADHDone is here to help!**
+function handleHelpMeStart(args: any): string {
+  const { task } = args;
+  return `🧠 **ADHDone is here to help!**
 
-I hear you - "${task}" feels overwhelming right now. That's completely normal.
+I hear you - "${
+    task || "this"
+  }" feels overwhelming right now. That's completely normal.
 
 **Let's make this tiny:**
 What's the absolute smallest first step? Something you could do in 2 minutes or less?
@@ -65,25 +98,11 @@ For example, if your task is "clean the kitchen", the tiniest step might be:
 - Pick up 5 things from the counter
 - Or just... walk to the kitchen and look at it
 
-What feels doable right now?
+What feels doable right now?`;
+}
 
----
-*User tracking working: ${String(userId).substring(0, 8)}...*`,
-  });
-});
-
-// Break down task
-app.post("/tools/break_down_task", (req, res) => {
-  const { task } = req.body;
-  const userId = req.headers["x-openai-subject"] || "unknown";
-
-  console.log(
-    `[break_down_task] User: ${String(userId).substring(
-      0,
-      20
-    )}... Task: ${task}`
-  );
-
+function handleBreakDownTask(args: any): string {
+  const { task } = args;
   const taskLower = (task || "").toLowerCase();
 
   let microTasks: string[];
@@ -118,18 +137,15 @@ app.post("/tools/break_down_task", (req, res) => {
     ];
   } else {
     microTasks = [
-      `🎯 Think: What's the very first physical action? (1 min)`,
-      `👣 Do that first action - nothing else (2 min)`,
-      `✅ Notice: You started! That's the hardest part`,
-      `🔄 What's the next tiny step? (2 min)`,
-      `🎉 Keep going or celebrate what you did!`,
+      "🎯 Think: What's the very first physical action? (1 min)",
+      "👣 Do that first action - nothing else (2 min)",
+      "✅ Notice: You started! That's the hardest part",
+      "🔄 What's the next tiny step? (2 min)",
+      "🎉 Keep going or celebrate what you did!",
     ];
   }
 
-  res.json({
-    task: task,
-    microTasks: microTasks,
-    message: `## Breaking down: "${task}"
+  return `## Breaking down: "${task}"
 
 Here are tiny, ADHD-friendly steps:
 
@@ -139,26 +155,13 @@ ${microTasks.map((t, i) => `${i + 1}. ${t}`).join("\n")}
 
 **Ready to start?** Just do step 1. Nothing else matters right now.
 
-Would you like me to start a timer for the first step?`,
-  });
-});
+Would you like me to start a timer for the first step?`;
+}
 
-// Start timer
-app.post("/tools/start_timer", (req, res) => {
-  const { task, minutes = 5 } = req.body;
-  const userId = req.headers["x-openai-subject"] || "unknown";
+function handleStartTimer(args: any): string {
+  const { task, minutes = 5 } = args;
 
-  console.log(
-    `[start_timer] User: ${String(userId).substring(
-      0,
-      20
-    )}... Task: ${task}, ${minutes} min`
-  );
-
-  res.json({
-    task: task,
-    minutes: minutes,
-    message: `## ⏱️ Timer Started: ${minutes} minutes
+  return `## ⏱️ Timer Started: ${minutes} minutes
 
 **Your focus task:** ${task}
 
@@ -166,24 +169,11 @@ app.post("/tools/start_timer", (req, res) => {
 
 🎯 **Just this ONE thing.** Nothing else exists right now.
 
-When you're done (or the time is up), tell me and we'll celebrate!
+When you're done (or the time is up), tell me and we'll celebrate!`;
+}
 
----
-*[Timer widget coming soon - for now, use your phone timer!]*`,
-  });
-});
-
-// Complete task
-app.post("/tools/complete_task", (req, res) => {
-  const { task, how_it_went } = req.body;
-  const userId = req.headers["x-openai-subject"] || "unknown";
-
-  console.log(
-    `[complete_task] User: ${String(userId).substring(
-      0,
-      20
-    )}... Completed: ${task}`
-  );
+function handleCompleteTask(args: any): string {
+  const { task } = args;
 
   const celebrations = [
     "🎉 **YES! You did it!**",
@@ -196,10 +186,7 @@ app.post("/tools/complete_task", (req, res) => {
   const celebration =
     celebrations[Math.floor(Math.random() * celebrations.length)];
 
-  res.json({
-    task: task,
-    celebration: celebration,
-    message: `${celebration}
+  return `${celebration}
 
 You completed: **${task}**
 
@@ -207,16 +194,152 @@ You completed: **${task}**
 
 Remember: With ADHD, starting is the hardest part. You didn't just do a task - you **beat the paralysis**. That's huge.
 
-${how_it_went ? `\nYou said: "${how_it_went}"` : ""}
-
----
-
 **What now?**
 - 🔄 Want to tackle another micro-task?
-- ☕ Take a well-deserved break?
+- ☕ Take a well-deserved break?`;
+}
 
----
-*Streak: 1 day (tracking coming soon)*`,
+function callTool(name: string, args: any): string {
+  switch (name) {
+    case "help_me_start":
+      return handleHelpMeStart(args);
+    case "break_down_task":
+      return handleBreakDownTask(args);
+    case "start_timer":
+      return handleStartTimer(args);
+    case "complete_task":
+      return handleCompleteTask(args);
+    default:
+      return `Unknown tool: ${name}`;
+  }
+}
+
+// ============================================
+// SSE Endpoint for MCP
+// ============================================
+
+app.get("/sse", (req: Request, res: Response) => {
+  console.log("[SSE] Client connected");
+
+  // Set SSE headers
+  res.setHeader("Content-Type", "text/event-stream");
+  res.setHeader("Cache-Control", "no-cache");
+  res.setHeader("Connection", "keep-alive");
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  res.flushHeaders();
+
+  // Send initial connection message
+  const sessionId = `session-${Date.now()}`;
+  res.write(`data: ${JSON.stringify({ type: "session", sessionId })}\n\n`);
+
+  // Keep connection alive
+  const keepAlive = setInterval(() => {
+    res.write(`: keepalive\n\n`);
+  }, 30000);
+
+  req.on("close", () => {
+    console.log("[SSE] Client disconnected");
+    clearInterval(keepAlive);
+  });
+});
+
+// ============================================
+// MCP Message Endpoint
+// ============================================
+
+app.post("/message", (req: Request, res: Response) => {
+  const { method, params, id } = req.body;
+
+  console.log(`[MCP] Method: ${method}, ID: ${id}`);
+
+  let result: any;
+
+  switch (method) {
+    case "initialize":
+      result = {
+        protocolVersion: "2024-11-05",
+        capabilities: {
+          tools: {},
+        },
+        serverInfo: {
+          name: "adhdone",
+          version: "0.1.0",
+        },
+      };
+      break;
+
+    case "tools/list":
+      result = { tools: TOOLS };
+      break;
+
+    case "tools/call":
+      const toolName = params?.name;
+      const toolArgs = params?.arguments || {};
+      console.log(`[MCP] Calling tool: ${toolName}`, toolArgs);
+
+      const content = callTool(toolName, toolArgs);
+      result = {
+        content: [{ type: "text", text: content }],
+      };
+      break;
+
+    default:
+      result = { error: `Unknown method: ${method}` };
+  }
+
+  res.json({ jsonrpc: "2.0", id, result });
+});
+
+// ============================================
+// Combined SSE + Message endpoint (what ChatGPT expects)
+// ============================================
+
+app.all("/", (req: Request, res: Response) => {
+  // If it's asking for SSE
+  if (
+    req.headers.accept?.includes("text/event-stream") ||
+    req.method === "GET"
+  ) {
+    console.log("[Root] SSE connection requested");
+
+    res.setHeader("Content-Type", "text/event-stream");
+    res.setHeader("Cache-Control", "no-cache");
+    res.setHeader("Connection", "keep-alive");
+    res.setHeader("Access-Control-Allow-Origin", "*");
+    res.flushHeaders();
+
+    // Send endpoint info
+    const endpoint = `https://${req.headers.host}/message`;
+    res.write(`event: endpoint\ndata: ${endpoint}\n\n`);
+
+    // Keep alive
+    const keepAlive = setInterval(() => {
+      res.write(`: keepalive\n\n`);
+    }, 30000);
+
+    req.on("close", () => {
+      clearInterval(keepAlive);
+    });
+
+    return;
+  }
+
+  // Otherwise return server info as JSON
+  res.json({
+    name: "ADHDone MCP Server",
+    version: "0.1.0",
+    description: "AI-powered ADHD task coach for ChatGPT",
+    status: "running",
+  });
+});
+
+// Health check
+app.get("/health", (req: Request, res: Response) => {
+  res.json({
+    status: "ok",
+    service: "adhdone",
+    version: "0.1.0",
+    timestamp: new Date().toISOString(),
   });
 });
 
@@ -228,13 +351,13 @@ app.listen(PORT, () => {
   console.log(`
 ╔═══════════════════════════════════════════╗
 ║           ADHDone MCP Server              ║
-║         Hello World Edition               ║
+║            SSE Edition                    ║
 ╠═══════════════════════════════════════════╣
 ║  Version: 0.1.0                           ║
 ║  Port: ${PORT}                              ║
 ╚═══════════════════════════════════════════╝
 
-✅ Health check: http://localhost:${PORT}/health
-✅ Server info: http://localhost:${PORT}/
+✅ Health: http://localhost:${PORT}/health
+✅ SSE: http://localhost:${PORT}/sse
   `);
 });
